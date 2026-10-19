@@ -1,181 +1,135 @@
 # Green Light Project
 
-一個以瀏覽器呈現的智慧交通號誌概念模擬器，用來比較傳統固定週期號誌（Fixed Timing）與規則式自適應號誌（Adaptive Traffic Control）在不同車流情境下的運作差異。
+Green Light Project V2.0.0 是一個以瀏覽器執行的多路口幹道交通模擬器，用來比較固定配時、局部自適應與協調式自適應三種規則式控制策略。
 
-> 本專案是視覺化概念驗證，不是實際道路交通號誌控制系統。
+> 本專案是交通控制概念驗證與視覺化工具，不是實際道路號誌控制系統，也不使用 AI 或機器學習。
 
-## 專案概念
+## V2.0.0：Multi-Intersection Corridor Simulation
 
-一般道路經常出現某個方向已經沒有車輛，號誌卻仍維持綠燈，而另一方向的車輛只能繼續等待的情況。
+路網由九個路口組成：
 
-Green Light Project 透過單一路口動畫模擬這個問題，並觀察號誌若能根據即時排隊狀況調整綠燈時間，是否能減少平均等待時間、最長等待時間與無效怠速。
+```text
+                 N2
+                  |
+                 N1
+                  |
+W2 ---- W1 ---- C ---- E1 ---- E2
+                  |
+                 S1
+                  |
+                 S2
+```
 
-目前提供兩種控制方式：
+- 主幹道：W2 → W1 → C → E1 → E2
+- 次幹道：N2 → N1 → C → S1 → S2
+- 車輛只直行，不進行轉彎
+- 幹道車輛通過路口後會繼續前往下一個路口，離開整個 RoadNetwork 才算完成旅次
 
-- **固定週期控制**：不考慮即時車流，每個方向固定維持 30 秒綠燈及 3 秒黃燈。
-- **自適應控制**：根據南北向與東西向的排隊數量，以公開、容易理解的規則調整綠燈時間。
+## 控制策略
 
-自適應模式使用的是 Rule-Based Algorithm，不宣稱為人工智慧或機器學習。
+### Fixed Timing
 
-## 目前功能
+每個路口依固定秒數切換，不讀取即時車流。主幹道一般採 EW 40 秒、支線 20 秒；次幹道路口採 NS 40 秒、橫向支線 20 秒；中央 C 路口使用獨立配時。黃燈固定 3 秒。
 
-### 路口與車輛模擬
+### Local Adaptive
 
-- 單一俯視十字路口
-- 南往北、北往南、東往西及西往東四個直行方向
-- 車輛從畫面外隨機生成並駛離路口
-- 紅燈及黃燈時在停止線前停車
-- 前方有車輛時維持安全間距
-- 綠燈時依序通過路口
-- 車輛離開 Canvas 後自動清除
+每個路口只讀取自己的 NS／EW 排隊狀況：
 
-### 號誌控制
+- 最短綠燈 10 秒、基準綠燈 30 秒、最長綠燈 60 秒
+- 沒有需求的綠燈方向可提早結束
+- 高排隊方向可延長綠燈
+- 對向紅燈等待達 60 秒時啟動 starvation protection
+- 不讀取其他路口、車隊或下游資訊
 
-- Fixed Timing 固定週期模式
-- Adaptive 自適應模式
-- 綠燈、黃燈、紅燈完整狀態
-- 南北向與東西向互斥，避免同時出現綠燈
-- 所有方向切換都會經過黃燈
+### Coordinated Adaptive
 
-自適應模式目前採用以下參數：
+在 Local Adaptive 基礎上加入幹道協調：
 
-| 參數 | 時間 |
-| --- | ---: |
-| 最短綠燈 | 10 秒 |
-| 基準綠燈 | 30 秒 |
-| 最長綠燈 | 60 秒 |
-| 黃燈 | 3 秒 |
+- EW 主幹道權重 1.5，次幹道權重 1.0
+- 記錄上游放行車隊的方向、數量、來源、時間與 ETA
+- ETA 10 秒內抵達且下游仍為同方向綠燈時，可延長至最長綠燈
+- 下游路段容量達 80% 時降低上游放行優先權
+- 支線等待達 60 秒時強制提高優先權，避免永遠沒有綠燈
 
-自適應控制會在最短綠燈後判斷雙方排隊需求：目前方向沒有車、對向有車，或對向排隊明顯較多時，可提早切換；目前方向需求明顯較高時，則可延長綠燈，但不超過 60 秒。
+## 交通情境與可重現性
 
-### 車流情境
+- Balanced
+- Morning Peak
+- Evening Peak
+- Main Road Heavy
+- Secondary Road Heavy
+- Off Peak
 
-- Low：低流量
-- Medium：中流量
-- High：高流量
-- Unbalanced：南北向高流量、東西向低流量
+車流使用 seeded random generator，預設 seed 為 `42`。相同 scenario、seed 與模擬時間會產生一致的車流，方便比較不同控制策略。
 
-Unbalanced 情境可用來觀察自適應控制面對不均衡車流時的反應。
+## KPI
 
-### 操作功能
+- Active Vehicles
+- Completed Vehicles
+- Average Travel Time
+- Average Waiting Time
+- Average Stops per Vehicle
+- Maximum Waiting Time
+- Total Idle Time
+- Network Throughput
+- Main Road Delay
+- Secondary Road Delay
+- Spillback Events
+- Green Wave Success Rate
+
+Green Wave Success 定義為：車輛進入主幹道後，連續通過至少兩個後續路口且沒有完整停止。
+
+## 操作
 
 - Start、Pause、Resume、Reset
 - 1×、2×、4× 模擬速度
-- 不重新載入頁面即可切換 Fixed 與 Adaptive 模式
-- English／繁體中文即時切換
-- 自動偵測瀏覽器語言
-- 使用瀏覽器儲存空間記住語言選擇
-- 桌面與行動裝置響應式版面
+- English／繁體中文切換
+- 控制策略、交通情境與 seed 可直接切換
 
-### 即時統計
-
-- 模擬經過時間
-- 已生成車輛數
-- 已通過車輛數
-- 目前等待車輛數
-- 平均等待時間
-- 最長等待時間
-- 全部停止車輛的累積怠速時間
-- 南北向與東西向排隊數量
-- 目前號誌狀態與階段剩餘秒數
+策略、情境或 seed 變更時會重設模擬，以維持比較條件一致。
 
 ## 技術架構
 
-- HTML5
-- CSS3
-- Vanilla JavaScript（ES Modules）
+- HTML5、CSS3、Vanilla JavaScript
 - HTML Canvas
-- `requestAnimationFrame()` 與 delta time 動畫更新
-
-專案沒有使用前端框架、後端服務、npm 套件或建置系統，可直接部署至 GitHub Pages。
-
-## 專案結構
+- ES Modules
+- `requestAnimationFrame()` 與 delta time
+- 無 npm dependency、後端或建置流程
+- 所有資源使用相對路徑，可部署至 GitHub Pages
 
 ```text
-green_light_project/
-├── index.html
-├── css/
-│   └── style.css
-├── js/
-│   ├── main.js
-│   ├── i18n.js
-│   ├── simulation.js
-│   ├── traffic-light.js
-│   ├── vehicle.js
-│   ├── controllers.js
-│   └── statistics.js
-├── README.md
-└── .gitignore
+js/
+├── main.js                 # UI 與事件
+├── simulation.js           # 動畫迴圈與繪圖
+├── road-network.js         # 拓樸、道路、route 與路網狀態
+├── intersection.js         # 單一路口狀態
+├── vehicle.js              # 車輛旅次與移動
+├── traffic-light.js        # 號誌狀態機
+├── controllers.js          # Fixed / Local Adaptive
+├── corridor-controller.js  # Coordinated Adaptive
+├── scenario-config.js      # 交通情境
+├── random.js               # Seeded random generator
+├── statistics.js           # KPI
+└── i18n.js                 # English / 繁體中文
 ```
 
-各模組職責：
-
-- `main.js`：DOM、操作按鈕、模式切換及介面更新
-- `i18n.js`：英文與繁體中文翻譯及語言偏好記憶
-- `simulation.js`：動畫迴圈、道路繪製、車流生成與車輛管理
-- `traffic-light.js`：號誌狀態、倒數及方向切換
-- `vehicle.js`：車輛移動、停止、安全距離與 Canvas 繪製
-- `controllers.js`：固定週期與規則式自適應控制演算法
-- `statistics.js`：等待時間、排隊數量與通行統計
-
 ## 本機執行
-
-JavaScript 使用 ES Modules，建議透過本機 HTTP Server 執行，不要直接以 `file://` 開啟 `index.html`。
-
-若已安裝 Python，可在專案目錄執行：
 
 ```bash
 python -m http.server 8000
 ```
 
-接著開啟：
-
-```text
-http://localhost:8000
-```
-
-## 部署至 GitHub Pages
-
-所有檔案皆使用相對路徑，可直接從 repository 根目錄部署：
-
-1. 進入 GitHub repository 的 **Settings → Pages**。
-2. 在 **Build and deployment** 選擇 **Deploy from a branch**。
-3. 選擇預設分支及根目錄 `/`。
-4. 儲存後等待 GitHub Pages 完成部署。
+開啟 `http://localhost:8000`。請勿以 `file://` 直接開啟 ES Modules。
 
 ## 已知限制
 
-- 目前僅模擬單一路口。
-- 車輛僅能直行，尚未支援轉彎及行人號誌。
-- V1.0.0 尚未同時執行兩套模擬進行並排比較。
-- 尚未提供統計圖表、資料匯入或機器學習模型。
-- 模擬結果用於概念展示，不代表真實道路工程評估。
+- 車輛僅直行，尚未支援轉彎、行人與大眾運輸優先。
+- Platoon 以短時間內通過同一路口的同方向車輛進行規則式分組。
+- 道路容量與 ETA 使用簡化模型，不代表真實道路工程校估結果。
+- 尚未提供三種策略同畫面同步比較或輸出 CSV。
 
 ## Roadmap
 
-### V1.x
-
-- Fixed 與 Adaptive 並排比較
-- 更多交通情境
-- 統計圖表
-
-### V2.0.0
-
-- 多路口模擬
-
-### V3.0.0
-
-- 匯入 JSON／CSV 車流資料
-
-### V4.0.0
-
-- 最佳化演算法與機器學習實驗
-
-## 版本紀錄
-
-- **V1.0.0**：初始公開版本
-- 後續版本的詳細變更請參閱 [GitHub Releases](../../releases)。
-
-## 授權
-
-目前尚未指定開源授權。未經授權前，著作權仍由專案作者保留。
+- V2.x：並排策略比較、KPI 圖表、結果匯出
+- V3.0.0：匯入 JSON／CSV 車流資料
+- V4.0.0：最佳化演算法與機器學習實驗

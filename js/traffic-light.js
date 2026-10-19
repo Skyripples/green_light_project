@@ -1,70 +1,41 @@
-import { FixedController, AdaptiveController, SIGNAL_TIMING } from './controllers.js';
+import { SIGNAL_TIMING } from './controllers.js';
 
-export const SignalState = Object.freeze({
-  GREEN: 'GREEN',
-  YELLOW: 'YELLOW',
-  RED: 'RED'
-});
+export const SignalState = Object.freeze({ GREEN: 'GREEN', YELLOW: 'YELLOW', RED: 'RED' });
 
 export class TrafficLight {
-  constructor(mode = 'fixed') {
-    this.mode = mode;
-    this.controller = this.createController(mode);
+  constructor(controller, initialAxis = 'EW', offset = 0) {
+    this.controller = controller;
+    this.initialAxis = initialAxis;
+    this.offset = offset;
     this.reset();
   }
-
-  createController(mode) {
-    return mode === 'adaptive' ? new AdaptiveController() : new FixedController();
-  }
-
-  setMode(mode) {
-    if (mode === this.mode) return;
-    this.mode = mode;
-    this.controller = this.createController(mode);
-    this.reset();
-  }
-
-  reset() {
-    this.activeAxis = 'NS';
-    this.phase = 'GREEN';
-    this.phaseElapsed = 0;
-  }
-
-  update(deltaTime, queues) {
+  reset() { this.activeAxis = this.initialAxis; this.phase = 'GREEN'; this.phaseElapsed = this.offset; }
+  setController(controller) { this.controller = controller; this.reset(); }
+  update(deltaTime, context) {
     this.phaseElapsed += deltaTime;
     if (this.phase === 'YELLOW') {
-      if (this.phaseElapsed >= SIGNAL_TIMING.YELLOW) this.completeYellow();
+      if (this.phaseElapsed >= SIGNAL_TIMING.YELLOW) {
+        this.activeAxis = this.activeAxis === 'NS' ? 'EW' : 'NS';
+        this.phase = 'GREEN';
+        this.phaseElapsed = 0;
+      }
       return;
     }
-
-    if (this.controller.shouldEndGreen({ axis: this.activeAxis, elapsed: this.phaseElapsed, queues })) {
+    if (this.controller.shouldEndGreen({ ...context, axis: this.activeAxis, elapsed: this.phaseElapsed })) {
       this.phase = 'YELLOW';
       this.phaseElapsed = 0;
     }
   }
-
-  completeYellow() {
-    this.activeAxis = this.activeAxis === 'NS' ? 'EW' : 'NS';
-    this.phase = 'GREEN';
-    this.phaseElapsed = 0;
-  }
-
   getState(axis) {
     if (axis !== this.activeAxis) return SignalState.RED;
     return this.phase === 'YELLOW' ? SignalState.YELLOW : SignalState.GREEN;
   }
-
   canProceed(direction) {
     const axis = direction === 'north' || direction === 'south' ? 'NS' : 'EW';
     return this.getState(axis) === SignalState.GREEN;
   }
-
-  getRemaining(queues) {
-    return this.controller.getRemaining({
-      axis: this.activeAxis,
-      elapsed: this.phaseElapsed,
-      isYellow: this.phase === 'YELLOW',
-      queues
-    });
+  getRemaining(context) {
+    if (this.phase === 'YELLOW') return Math.max(0, SIGNAL_TIMING.YELLOW - this.phaseElapsed);
+    return Math.max(0, this.controller.getTargetDuration({ ...context, axis: this.activeAxis }) - this.phaseElapsed);
   }
 }

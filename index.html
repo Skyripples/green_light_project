@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="A single-intersection traffic signal simulator comparing fixed and adaptive control." data-i18n-content="meta.description">
+  <meta name="description" content="A multi-intersection corridor traffic control simulator." data-i18n-content="meta.description">
   <title data-i18n="meta.title">Green Light Project</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23101619'/%3E%3Ccircle cx='16' cy='16' r='7' fill='%2348ce82'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="./css/style.css">
@@ -11,47 +11,49 @@
 <body>
   <header class="topbar">
     <div>
-      <p class="eyebrow">SMART MOBILITY LAB / V1.0.0</p>
+      <p class="eyebrow">SMART MOBILITY LAB / V2.0.0</p>
       <h1>Green Light Project</h1>
-      <p class="subtitle" data-i18n="header.subtitle">Adaptive Traffic Signal Simulation</p>
+      <p class="subtitle" data-i18n="header.subtitle">Multi-Intersection Corridor Simulation</p>
     </div>
     <div class="topbar-actions">
-      <button class="language-toggle" id="languageToggle" type="button" aria-label="切換為繁體中文">繁中</button>
-      <div class="system-status" aria-label="System status" data-i18n-aria="aria.systemStatus">
-        <span class="status-dot" aria-hidden="true"></span>
-        <span id="systemStatus">READY</span>
-      </div>
+      <button class="language-toggle" id="languageToggle" type="button">繁中</button>
+      <div class="system-status" data-i18n-aria="aria.systemStatus" aria-label="System status"><span class="status-dot"></span><span id="systemStatus">READY</span></div>
     </div>
   </header>
 
   <main class="dashboard">
-    <aside class="panel controls-panel" aria-label="Simulation controls" data-i18n-aria="aria.controls">
-      <div class="panel-heading">
-        <span class="panel-number">01</span>
-        <div><p data-i18n="control.label">CONTROL</p><h2 data-i18n="control.title">Simulation Setup</h2></div>
-      </div>
+    <aside class="panel controls-panel" data-i18n-aria="aria.controls" aria-label="Simulation controls">
+      <div class="panel-heading"><span class="panel-number">01</span><div><p data-i18n="control.label">CONTROL</p><h2 data-i18n="control.title">Network Setup</h2></div></div>
 
       <fieldset>
-        <legend data-i18n="control.mode">Simulation Mode</legend>
-        <div class="segmented two-col" id="modeControl">
-          <label><input type="radio" name="mode" value="fixed" checked><span data-i18n="mode.fixedShort">Fixed Timing</span></label>
-          <label><input type="radio" name="mode" value="adaptive"><span data-i18n="mode.adaptiveShort">Adaptive</span></label>
+        <legend data-i18n="control.strategy">Control Strategy</legend>
+        <div class="segmented strategy-grid">
+          <label><input type="radio" name="strategy" value="fixed" checked><span data-i18n="strategy.fixedShort">Fixed</span></label>
+          <label><input type="radio" name="strategy" value="local"><span data-i18n="strategy.localShort">Local</span></label>
+          <label><input type="radio" name="strategy" value="coordinated"><span data-i18n="strategy.coordinatedShort">Coordinated</span></label>
         </div>
       </fieldset>
 
       <fieldset>
-        <legend data-i18n="control.flow">Traffic Flow</legend>
-        <div class="segmented flow-grid" id="flowControl">
-          <label><input type="radio" name="flow" value="low"><span data-i18n="flow.low">Low</span></label>
-          <label><input type="radio" name="flow" value="medium" checked><span data-i18n="flow.medium">Medium</span></label>
-          <label><input type="radio" name="flow" value="high"><span data-i18n="flow.high">High</span></label>
-          <label><input type="radio" name="flow" value="unbalanced"><span data-i18n="flow.unbalanced">Unbalanced</span></label>
-        </div>
+        <legend data-i18n="control.scenario">Traffic Scenario</legend>
+        <select id="scenarioSelect">
+          <option value="balanced" data-i18n="scenario.balanced">Balanced</option>
+          <option value="morning" data-i18n="scenario.morning">Morning Peak</option>
+          <option value="evening" data-i18n="scenario.evening">Evening Peak</option>
+          <option value="mainHeavy" data-i18n="scenario.mainHeavy">Main Road Heavy</option>
+          <option value="secondaryHeavy" data-i18n="scenario.secondaryHeavy">Secondary Road Heavy</option>
+          <option value="offPeak" data-i18n="scenario.offPeak">Off Peak</option>
+        </select>
+      </fieldset>
+
+      <fieldset>
+        <legend data-i18n="control.seed">Random Seed</legend>
+        <input class="seed-input" id="seedInput" type="number" min="1" max="4294967295" value="42" inputmode="numeric">
       </fieldset>
 
       <fieldset>
         <legend data-i18n="control.speed">Simulation Speed</legend>
-        <div class="segmented three-col" id="speedControl">
+        <div class="segmented three-col">
           <label><input type="radio" name="speed" value="1" checked><span>1×</span></label>
           <label><input type="radio" name="speed" value="2"><span>2×</span></label>
           <label><input type="radio" name="speed" value="4"><span>4×</span></label>
@@ -65,73 +67,58 @@
       </div>
 
       <div class="mode-card">
-        <span data-i18n="mode.current">Current Mode</span>
-        <strong id="currentMode">FIXED TIMING</strong>
-        <p id="modeDescription">30-second green phases regardless of demand.</p>
+        <span data-i18n="strategy.current">Current Strategy</span>
+        <strong id="currentStrategy">FIXED TIMING</strong>
+        <p id="strategyDescription">Every intersection follows a fixed signal plan.</p>
       </div>
     </aside>
 
-    <section class="simulation-column" aria-label="Intersection simulation" data-i18n-aria="aria.simulation">
+    <section class="simulation-column" data-i18n-aria="aria.simulation" aria-label="Road network simulation">
       <div class="canvas-header">
-        <div>
-          <span class="section-label" data-i18n="simulation.live">LIVE INTERSECTION</span>
-          <h2 data-i18n="simulation.junction">Junction 01</h2>
-        </div>
+        <div><span class="section-label" data-i18n="simulation.live">LIVE NETWORK</span><h2 data-i18n="simulation.corridor">9-Node Corridor</h2></div>
         <div class="sim-time"><span data-i18n="simulation.time">SIM TIME</span><strong id="canvasTime">00:00</strong></div>
       </div>
-      <div class="canvas-shell">
-        <canvas id="simulationCanvas" aria-label="Top-down intersection traffic simulation" data-i18n-aria="aria.canvas"></canvas>
-        <div class="canvas-overlay" aria-hidden="true">
-          <span class="direction north">N</span>
-          <span class="direction east">E</span>
-          <span class="direction south">S</span>
-          <span class="direction west">W</span>
-        </div>
+      <div class="canvas-shell corridor-canvas">
+        <canvas id="simulationCanvas" data-i18n-aria="aria.canvas" aria-label="Multi-intersection road network"></canvas>
+        <div class="canvas-overlay"><span class="direction north">N</span><span class="direction east">E</span><span class="direction south">S</span><span class="direction west">W</span></div>
       </div>
-      <p class="canvas-note"><span></span><b data-i18n="simulation.note">Rule-based traffic simulation · vehicles travel straight only</b></p>
+      <p class="canvas-note"><span></span><b data-i18n="simulation.note">Rule-based control · deterministic traffic · straight routes only</b></p>
     </section>
 
-    <aside class="panel data-panel" aria-label="Live statistics" data-i18n-aria="aria.statistics">
-      <div class="panel-heading">
-        <span class="panel-number">02</span>
-        <div><p data-i18n="metrics.label">TELEMETRY</p><h2 data-i18n="metrics.title">Live Metrics</h2></div>
-      </div>
+    <aside class="panel data-panel" data-i18n-aria="aria.statistics" aria-label="Network statistics">
+      <div class="panel-heading"><span class="panel-number">02</span><div><p data-i18n="metrics.label">NETWORK KPI</p><h2 data-i18n="metrics.title">Live Performance</h2></div></div>
 
-      <section class="signal-section" aria-label="Signal status" data-i18n-aria="aria.signals">
-        <div class="signal-row">
-          <div><span class="axis-tag">NS</span><div class="mini-signal" id="nsSignal" data-state="green"><i></i><i></i><i></i></div></div>
-          <strong id="nsState">GREEN</strong>
-        </div>
-        <div class="signal-row">
-          <div><span class="axis-tag">EW</span><div class="mini-signal" id="ewSignal" data-state="red"><i></i><i></i><i></i></div></div>
-          <strong id="ewState">RED</strong>
-        </div>
-        <div class="phase-countdown"><span data-i18n="signal.remaining">PHASE REMAINING</span><strong><b id="phaseRemaining">30</b> <i data-i18n="unit.seconds">s</i></strong></div>
+      <section class="network-strip">
+        <div><span data-i18n="network.intersections">Intersections</span><strong>9</strong></div>
+        <div><span data-i18n="network.platoons">Platoons</span><strong id="platoons">0</strong></div>
+        <div><span data-i18n="network.congestion">Congested</span><strong id="congestedSegments">0</strong></div>
       </section>
 
-      <section class="metrics-grid" aria-label="Simulation statistics" data-i18n-aria="aria.metrics">
+      <section class="metrics-grid v2-metrics">
         <div class="metric wide"><span data-i18n="metrics.elapsed">Elapsed Time</span><strong id="elapsedTime">00:00</strong></div>
-        <div class="metric"><span data-i18n="metrics.generated">Generated</span><strong id="vehiclesGenerated">0</strong></div>
-        <div class="metric"><span data-i18n="metrics.passed">Passed</span><strong id="vehiclesPassed">0</strong></div>
-        <div class="metric"><span data-i18n="metrics.waiting">Waiting</span><strong id="currentlyWaiting">0</strong></div>
+        <div class="metric"><span data-i18n="metrics.active">Active Vehicles</span><strong id="activeVehicles">0</strong></div>
+        <div class="metric"><span data-i18n="metrics.completed">Completed</span><strong id="completedVehicles">0</strong></div>
+        <div class="metric"><span data-i18n="metrics.travel">Avg. Travel</span><strong><b id="averageTravelTime">0.0</b> <i data-i18n="unit.seconds">s</i></strong></div>
         <div class="metric"><span data-i18n="metrics.average">Avg. Wait</span><strong><b id="averageWaitingTime">0.0</b> <i data-i18n="unit.seconds">s</i></strong></div>
+        <div class="metric"><span data-i18n="metrics.stops">Avg. Stops</span><strong id="averageStops">0.0</strong></div>
         <div class="metric"><span data-i18n="metrics.maximum">Max. Wait</span><strong><b id="maximumWaitingTime">0.0</b> <i data-i18n="unit.seconds">s</i></strong></div>
-        <div class="metric"><span data-i18n="metrics.idle">Total Idle</span><strong><b id="totalIdleTime">0.0</b> <i data-i18n="unit.seconds">s</i></strong></div>
+        <div class="metric"><span data-i18n="metrics.idle">Total Idle</span><strong><b id="totalIdleTime">0</b> <i data-i18n="unit.seconds">s</i></strong></div>
+        <div class="metric"><span data-i18n="metrics.throughput">Throughput / min</span><strong id="throughput">0.0</strong></div>
+        <div class="metric"><span data-i18n="metrics.mainDelay">Main Delay</span><strong><b id="mainRoadDelay">0.0</b> <i data-i18n="unit.seconds">s</i></strong></div>
+        <div class="metric"><span data-i18n="metrics.secondaryDelay">Secondary Delay</span><strong><b id="secondaryRoadDelay">0.0</b> <i data-i18n="unit.seconds">s</i></strong></div>
+        <div class="metric"><span data-i18n="metrics.spillback">Spillback Events</span><strong id="spillbackEvents">0</strong></div>
+        <div class="metric"><span data-i18n="metrics.greenWave">Green Wave</span><strong><b id="greenWaveSuccessRate">0.0</b>%</strong></div>
       </section>
 
-      <section class="queue-section" aria-label="Directional queues" data-i18n-aria="aria.queues">
-        <div class="queue-heading"><span data-i18n="queue.load">QUEUE LOAD</span><span data-i18n="queue.vehicles">VEHICLES</span></div>
-        <div class="queue-row"><span data-i18n="queue.ns">North / South</span><div><i id="nsQueueBar"></i></div><strong id="nsQueue">0</strong></div>
-        <div class="queue-row"><span data-i18n="queue.ew">East / West</span><div><i id="ewQueueBar"></i></div><strong id="ewQueue">0</strong></div>
+      <section class="queue-section">
+        <div class="queue-heading"><span data-i18n="queue.load">CORRIDOR QUEUE</span><span data-i18n="queue.vehicles">VEHICLES</span></div>
+        <div class="queue-row"><span data-i18n="queue.main">Main road</span><div><i id="mainQueueBar"></i></div><strong id="mainQueue">0</strong></div>
+        <div class="queue-row"><span data-i18n="queue.secondary">Secondary</span><div><i id="secondaryQueueBar"></i></div><strong id="secondaryQueue">0</strong></div>
       </section>
     </aside>
   </main>
 
-  <footer>
-    <span data-i18n="footer.project">GREEN LIGHT PROJECT · CONCEPT SIMULATOR</span>
-    <span data-i18n="footer.version">V1.0.0 / SINGLE INTERSECTION</span>
-  </footer>
-
+  <footer><span data-i18n="footer.project">GREEN LIGHT PROJECT · CORRIDOR CONTROL LAB</span><span data-i18n="footer.version">V2.0.0 / 9 INTERSECTIONS</span></footer>
   <script type="module" src="./js/main.js"></script>
 </body>
 </html>

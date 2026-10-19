@@ -1,81 +1,44 @@
-import { Vehicle } from './vehicle.js';
-import { TrafficLight } from './traffic-light.js';
+import { RoadNetwork, NODES } from './road-network.js';
 import { Statistics } from './statistics.js';
-
-const DIRECTIONS = ['north', 'south', 'east', 'west'];
-const FLOW_RANGES = {
-  low: [4, 8],
-  medium: [2, 5],
-  high: [1, 3]
-};
+import { SeededRandom } from './random.js';
+import { getScenario } from './scenario-config.js';
 
 export class Simulation {
   constructor(canvas, onUpdate) {
     this.canvas = canvas;
     this.context = canvas.getContext('2d');
     this.onUpdate = onUpdate;
-    this.mode = 'fixed';
-    this.flow = 'medium';
+    this.strategy = 'fixed';
+    this.scenarioId = 'balanced';
+    this.seed = 42;
     this.speedMultiplier = 1;
-    this.trafficLight = new TrafficLight(this.mode);
-    this.statistics = new Statistics();
-    this.vehicles = [];
-    this.nextVehicleId = 1;
-    this.spawnAt = {};
     this.running = false;
     this.paused = false;
     this.lastTimestamp = null;
     this.animationFrame = null;
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(this.canvas.parentElement);
+    this.reset();
     this.resize();
-    this.resetSpawnSchedule();
-    this.draw();
-    this.emitUpdate();
+  }
+
+  createState() {
+    this.random = new SeededRandom(this.seed);
+    this.statistics = new Statistics();
+    this.network = new RoadNetwork({ strategy: this.strategy, random: this.random, statistics: this.statistics });
+    this.spawnAt = new Map();
+    for (const source of this.network.sources) this.spawnAt.set(source.key, this.randomSpawnDelay(source.group) * .3);
   }
 
   resize() {
     const rect = this.canvas.getBoundingClientRect();
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const width = Math.max(320, Math.round(rect.width));
-    const height = Math.max(320, Math.round(rect.height));
-    this.canvas.width = Math.round(width * dpr);
-    this.canvas.height = Math.round(height * dpr);
+    this.width = Math.max(340, Math.round(rect.width));
+    this.height = Math.max(460, Math.round(rect.height));
+    this.canvas.width = Math.round(this.width * dpr);
+    this.canvas.height = Math.round(this.height * dpr);
     this.context.setTransform(dpr, 0, 0, dpr, 0, 0);
-    this.width = width;
-    this.height = height;
-    this.geometry = this.getGeometry();
-    this.repositionVehiclesAfterResize();
     this.draw();
-  }
-
-  getGeometry() {
-    const cx = this.width / 2;
-    const cy = this.height / 2;
-    const roadWidth = Math.max(112, Math.min(this.width, this.height) * 0.28);
-    const laneOffset = roadWidth * 0.22;
-    const halfRoad = roadWidth / 2;
-    return {
-      cx, cy, roadWidth, laneOffset,
-      intersection: { left: cx - halfRoad, right: cx + halfRoad, top: cy - halfRoad, bottom: cy + halfRoad },
-      stops: {
-        north: cy + halfRoad + 8,
-        south: cy - halfRoad - 8,
-        east: cx - halfRoad - 8,
-        west: cx + halfRoad + 8
-      }
-    };
-  }
-
-  repositionVehiclesAfterResize() {
-    if (!this.geometry || !this.vehicles.length) return;
-    const { cx, cy, laneOffset } = this.geometry;
-    for (const vehicle of this.vehicles) {
-      if (vehicle.direction === 'north') vehicle.x = cx - laneOffset;
-      if (vehicle.direction === 'south') vehicle.x = cx + laneOffset;
-      if (vehicle.direction === 'east') vehicle.y = cy + laneOffset;
-      if (vehicle.direction === 'west') vehicle.y = cy - laneOffset;
-    }
   }
 
   start() {
@@ -101,220 +64,122 @@ export class Simulation {
     this.paused = false;
     this.lastTimestamp = null;
     this.animationFrame = null;
-    this.vehicles = [];
-    this.nextVehicleId = 1;
-    this.trafficLight = new TrafficLight(this.mode);
-    this.statistics.reset();
-    this.resetSpawnSchedule();
+    this.createState();
     this.draw();
     this.emitUpdate();
   }
 
-  setMode(mode) {
-    this.mode = mode;
-    this.reset();
-  }
-
-  setFlow(flow) {
-    this.flow = flow;
-    this.resetSpawnSchedule();
-  }
-
-  setSpeed(multiplier) {
-    this.speedMultiplier = Number(multiplier);
-  }
+  setStrategy(strategy) { this.strategy = strategy; this.reset(); }
+  setScenario(scenarioId) { this.scenarioId = scenarioId; this.reset(); }
+  setSeed(seed) { this.seed = Math.max(1, Number(seed) || 42); this.reset(); }
+  setSpeed(multiplier) { this.speedMultiplier = Number(multiplier); this.emitUpdate(); }
 
   loop(timestamp) {
     if (!this.running || this.paused) return;
     if (this.lastTimestamp === null) this.lastTimestamp = timestamp;
-    const realDelta = Math.min((timestamp - this.lastTimestamp) / 1000, 0.05);
+    const realDelta = Math.min((timestamp - this.lastTimestamp) / 1000, .05);
     this.lastTimestamp = timestamp;
-    const simulationDelta = realDelta * this.speedMultiplier;
-
-    // Small fixed substeps keep collision and stop-line behavior reliable at 4x.
-    let remaining = simulationDelta;
+    let remaining = realDelta * this.speedMultiplier;
     while (remaining > 0) {
-      const step = Math.min(remaining, 1 / 60);
+      const step = Math.min(remaining, 1 / 30);
       this.update(step);
       remaining -= step;
     }
-
     this.draw();
     this.emitUpdate();
-    this.animationFrame = requestAnimationFrame((nextTimestamp) => this.loop(nextTimestamp));
+    this.animationFrame = requestAnimationFrame((next) => this.loop(next));
   }
 
   update(deltaTime) {
-    const queues = this.getQueues();
-    this.trafficLight.update(deltaTime, queues);
     this.spawnVehicles();
-
-    for (const direction of DIRECTIONS) {
-      const lane = this.vehicles
-        .filter((vehicle) => vehicle.direction === direction)
-        .sort((a, b) => b.progression - a.progression);
-      lane.forEach((vehicle, index) => {
-        vehicle.update(
-          deltaTime,
-          this.trafficLight.canProceed(direction),
-          this.geometry.stops[direction],
-          index === 0 ? null : lane[index - 1],
-          this.geometry.intersection
-        );
-      });
-    }
-
-    const remainingVehicles = [];
-    for (const vehicle of this.vehicles) {
-      if (vehicle.isOutside(this.width, this.height)) this.statistics.recordPassed(vehicle);
-      else remainingVehicles.push(vehicle);
-    }
-    this.vehicles = remainingVehicles;
-    this.statistics.update(deltaTime, this.vehicles, this.getQueues());
+    this.network.update(deltaTime);
+    this.statistics.update(deltaTime, this.network.vehicles);
   }
 
-  resetSpawnSchedule() {
-    const now = this.statistics?.elapsedTime || 0;
-    for (const direction of DIRECTIONS) this.spawnAt[direction] = now + this.randomSpawnDelay(direction) * 0.35;
-  }
-
-  randomSpawnDelay(direction) {
-    let profile = this.flow;
-    if (profile === 'unbalanced') profile = direction === 'north' || direction === 'south' ? 'high' : 'low';
-    const [min, max] = FLOW_RANGES[profile] || FLOW_RANGES.medium;
-    return min + Math.random() * (max - min);
+  randomSpawnDelay(group) {
+    const range = getScenario(this.scenarioId).intervals[group] || [6, 10];
+    return this.random.range(range[0], range[1]);
   }
 
   spawnVehicles() {
-    for (const direction of DIRECTIONS) {
-      if (this.statistics.elapsedTime < this.spawnAt[direction]) continue;
-      if (this.canSpawn(direction)) {
-        this.vehicles.push(this.createVehicle(direction));
-        this.statistics.recordGenerated();
-        this.spawnAt[direction] = this.statistics.elapsedTime + this.randomSpawnDelay(direction);
-      } else {
-        this.spawnAt[direction] = this.statistics.elapsedTime + 0.5;
-      }
+    for (const source of this.network.sources) {
+      if (this.statistics.elapsedTime < this.spawnAt.get(source.key)) continue;
+      if (this.network.spawn(source.key)) this.spawnAt.set(source.key, this.statistics.elapsedTime + this.randomSpawnDelay(source.group));
+      else this.spawnAt.set(source.key, this.statistics.elapsedTime + .75);
     }
-  }
-
-  createVehicle(direction) {
-    const { cx, cy, laneOffset } = this.geometry;
-    const positions = {
-      north: { x: cx - laneOffset, y: this.height + 28 },
-      south: { x: cx + laneOffset, y: -28 },
-      east: { x: -28, y: cy + laneOffset },
-      west: { x: this.width + 28, y: cy - laneOffset }
-    };
-    return new Vehicle({
-      id: this.nextVehicleId++,
-      direction,
-      ...positions[direction],
-      spawnTime: this.statistics.elapsedTime
-    });
-  }
-
-  canSpawn(direction) {
-    const start = this.createVehicle(direction);
-    return !this.vehicles.some((vehicle) => vehicle.direction === direction && Math.abs(vehicle.progression - start.progression) < 48);
-  }
-
-  getQueues() {
-    const queues = { NS: 0, EW: 0 };
-    for (const vehicle of this.vehicles) {
-      if (vehicle.hasCrossed || !vehicle.isBeforeStopLine(this.geometry.stops[vehicle.direction])) continue;
-      const nearApproach = vehicle.distanceToStopLine(this.geometry.stops[vehicle.direction]) < 220;
-      if (nearApproach && (vehicle.isStopped || vehicle.speed < vehicle.maxSpeed * 0.35)) queues[vehicle.axis] += 1;
-    }
-    return queues;
   }
 
   draw() {
-    if (!this.width || !this.height || !this.geometry) return;
-    const context = this.context;
-    const { cx, cy, roadWidth, laneOffset, intersection, stops } = this.geometry;
-    context.clearRect(0, 0, this.width, this.height);
-    context.fillStyle = '#0b1213';
-    context.fillRect(0, 0, this.width, this.height);
+    if (!this.context || !this.width || !this.network) return;
+    const ctx = this.context;
+    ctx.clearRect(0, 0, this.width, this.height);
+    ctx.fillStyle = '#0a1113';
+    ctx.fillRect(0, 0, this.width, this.height);
+    ctx.strokeStyle = 'rgba(126,151,146,.05)';
+    ctx.lineWidth = 1;
+    for (let x = 20; x < this.width; x += 36) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, this.height); ctx.stroke(); }
+    for (let y = 20; y < this.height; y += 36) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(this.width, y); ctx.stroke(); }
 
-    // Subtle city grid outside the roadway.
-    context.strokeStyle = 'rgba(126, 151, 146, .055)';
-    context.lineWidth = 1;
-    for (let x = 18; x < this.width; x += 36) { context.beginPath(); context.moveTo(x, 0); context.lineTo(x, this.height); context.stroke(); }
-    for (let y = 18; y < this.height; y += 36) { context.beginPath(); context.moveTo(0, y); context.lineTo(this.width, y); context.stroke(); }
-
-    context.fillStyle = '#20282b';
-    context.fillRect(cx - roadWidth / 2, 0, roadWidth, this.height);
-    context.fillRect(0, cy - roadWidth / 2, this.width, roadWidth);
-    context.fillStyle = '#242d30';
-    context.fillRect(intersection.left, intersection.top, roadWidth, roadWidth);
-
-    context.save();
-    context.setLineDash([12, 12]);
-    context.strokeStyle = 'rgba(214, 222, 219, .22)';
-    context.lineWidth = 1;
-    context.beginPath(); context.moveTo(cx, 0); context.lineTo(cx, intersection.top); context.stroke();
-    context.beginPath(); context.moveTo(cx, intersection.bottom); context.lineTo(cx, this.height); context.stroke();
-    context.beginPath(); context.moveTo(0, cy); context.lineTo(intersection.left, cy); context.stroke();
-    context.beginPath(); context.moveTo(intersection.right, cy); context.lineTo(this.width, cy); context.stroke();
-    context.restore();
-
-    context.strokeStyle = 'rgba(231, 236, 234, .75)';
-    context.lineWidth = 2;
-    this.drawStopLine('north', cx - laneOffset, stops.north, roadWidth * .35);
-    this.drawStopLine('south', cx + laneOffset, stops.south, roadWidth * .35);
-    this.drawStopLine('east', stops.east, cy + laneOffset, roadWidth * .35);
-    this.drawStopLine('west', stops.west, cy - laneOffset, roadWidth * .35);
-
-    this.drawTrafficLights();
-    for (const vehicle of this.vehicles) vehicle.draw(context);
+    this.drawRoad(.02, .5, .98, .5, 22, '#283235');
+    this.drawRoad(.5, .02, .5, .98, 15, '#222c2f');
+    for (const [id, node] of Object.entries(NODES)) {
+      if (id !== 'C') {
+        if (node.corridor === 'main') this.drawRoad(node.x, node.y - .07, node.x, node.y + .07, 8, '#1d272a');
+        else this.drawRoad(node.x - .07, node.y, node.x + .07, node.y, 8, '#1d272a');
+      }
+    }
+    this.drawLaneMarkings();
+    for (const intersection of this.network.intersections.values()) this.drawIntersection(intersection);
+    for (const vehicle of this.network.vehicles) vehicle.draw(ctx, this.width, this.height);
   }
 
-  drawStopLine(direction, x, y, length) {
-    const context = this.context;
-    context.beginPath();
-    if (direction === 'north' || direction === 'south') { context.moveTo(x - length / 2, y); context.lineTo(x + length / 2, y); }
-    else { context.moveTo(x, y - length / 2); context.lineTo(x, y + length / 2); }
-    context.stroke();
+  drawRoad(x1, y1, x2, y2, width, color) {
+    const ctx = this.context;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.lineCap = 'butt';
+    ctx.beginPath(); ctx.moveTo(x1 * this.width, y1 * this.height); ctx.lineTo(x2 * this.width, y2 * this.height); ctx.stroke();
   }
 
-  drawTrafficLights() {
-    const { intersection } = this.geometry;
-    const inset = 17;
-    this.drawSignal(intersection.left - inset, intersection.bottom + inset, this.trafficLight.getState('NS'));
-    this.drawSignal(intersection.right + inset, intersection.top - inset, this.trafficLight.getState('NS'));
-    this.drawSignal(intersection.left - inset, intersection.top - inset, this.trafficLight.getState('EW'));
-    this.drawSignal(intersection.right + inset, intersection.bottom + inset, this.trafficLight.getState('EW'));
+  drawLaneMarkings() {
+    const ctx = this.context;
+    ctx.save();
+    ctx.setLineDash([9, 10]);
+    ctx.strokeStyle = 'rgba(220,229,226,.2)';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(0, this.height * .5); ctx.lineTo(this.width, this.height * .5); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(this.width * .5, 0); ctx.lineTo(this.width * .5, this.height); ctx.stroke();
+    ctx.restore();
   }
 
-  drawSignal(x, y, state) {
-    const colors = { RED: '#e15d64', YELLOW: '#e4b94d', GREEN: '#48ce82' };
-    const context = this.context;
-    context.beginPath();
-    context.arc(x, y, 7, 0, Math.PI * 2);
-    context.fillStyle = '#080c0d';
-    context.fill();
-    context.beginPath();
-    context.arc(x, y, 4, 0, Math.PI * 2);
-    context.fillStyle = colors[state];
-    context.shadowColor = colors[state];
-    context.shadowBlur = 9;
-    context.fill();
-    context.shadowBlur = 0;
+  drawIntersection(intersection) {
+    const ctx = this.context;
+    const x = intersection.x * this.width;
+    const y = intersection.y * this.height;
+    const ew = intersection.getState('EW');
+    const ns = intersection.getState('NS');
+    const color = (state) => ({ GREEN: '#48ce82', YELLOW: '#e4b94d', RED: '#e15d64' })[state];
+    ctx.fillStyle = '#303a3d';
+    ctx.fillRect(x - 10, y - 10, 20, 20);
+    ctx.fillStyle = '#081012';
+    ctx.fillRect(x - 17, y - 18, 34, 7);
+    ctx.beginPath(); ctx.arc(x - 9, y - 14.5, 3, 0, Math.PI * 2); ctx.fillStyle = color(ew); ctx.fill();
+    ctx.beginPath(); ctx.arc(x + 9, y - 14.5, 3, 0, Math.PI * 2); ctx.fillStyle = color(ns); ctx.fill();
+    ctx.fillStyle = '#d5dfdd';
+    ctx.font = '700 9px ui-monospace, monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(intersection.id, x, y + 4);
+    const queue = intersection.queues.NS + intersection.queues.EW;
+    if (queue > 0) {
+      ctx.fillStyle = '#79d7a1';
+      ctx.font = '700 8px ui-monospace, monospace';
+      ctx.fillText(`Q${queue}`, x, y + 24);
+    }
   }
 
   emitUpdate() {
-    const queues = this.getQueues();
-    this.onUpdate?.({
-      ...this.statistics.snapshot(),
-      nsState: this.trafficLight.getState('NS'),
-      ewState: this.trafficLight.getState('EW'),
-      phaseRemaining: this.trafficLight.getRemaining(queues),
-      running: this.running,
-      paused: this.paused,
-      mode: this.mode,
-      flow: this.flow,
-      speed: this.speedMultiplier
-    });
+    if (!this.statistics || !this.network) return;
+    const state = this.statistics.snapshot(this.network.vehicles, this.network.getNetworkState());
+    this.onUpdate?.({ ...state, running: this.running, paused: this.paused, strategy: this.strategy, scenario: this.scenarioId, seed: this.seed, speed: this.speedMultiplier });
   }
 }
