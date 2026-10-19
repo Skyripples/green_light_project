@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="A single-intersection traffic signal simulator comparing fixed and adaptive control." data-i18n-content="meta.description">
+  <title data-i18n="meta.title">Green Light Project</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23101619'/%3E%3Ccircle cx='16' cy='16' r='7' fill='%2348ce82'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="./css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">SMART MOBILITY LAB / V1.0.0</p>
+      <h1>Green Light Project</h1>
+      <p class="subtitle" data-i18n="header.subtitle">Adaptive Traffic Signal Simulation</p>
+    </div>
+    <div class="topbar-actions">
+      <button class="language-toggle" id="languageToggle" type="button" aria-label="切換為繁體中文">繁中</button>
+      <div class="system-status" aria-label="System status" data-i18n-aria="aria.systemStatus">
+        <span class="status-dot" aria-hidden="true"></span>
+        <span id="systemStatus">READY</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="dashboard">
+    <aside class="panel controls-panel" aria-label="Simulation controls" data-i18n-aria="aria.controls">
+      <div class="panel-heading">
+        <span class="panel-number">01</span>
+        <div><p data-i18n="control.label">CONTROL</p><h2 data-i18n="control.title">Simulation Setup</h2></div>
+      </div>
+
+      <fieldset>
+        <legend data-i18n="control.mode">Simulation Mode</legend>
+        <div class="segmented two-col" id="modeControl">
+          <label><input type="radio" name="mode" value="fixed" checked><span data-i18n="mode.fixedShort">Fixed Timing</span></label>
+          <label><input type="radio" name="mode" value="adaptive"><span data-i18n="mode.adaptiveShort">Adaptive</span></label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend data-i18n="control.flow">Traffic Flow</legend>
+        <div class="segmented flow-grid" id="flowControl">
+          <label><input type="radio" name="flow" value="low"><span data-i18n="flow.low">Low</span></label>
+          <label><input type="radio" name="flow" value="medium" checked><span data-i18n="flow.medium">Medium</span></label>
+          <label><input type="radio" name="flow" value="high"><span data-i18n="flow.high">High</span></label>
+          <label><input type="radio" name="flow" value="unbalanced"><span data-i18n="flow.unbalanced">Unbalanced</span></label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend data-i18n="control.speed">Simulation Speed</legend>
+        <div class="segmented three-col" id="speedControl">
+          <label><input type="radio" name="speed" value="1" checked><span>1×</span></label>
+          <label><input type="radio" name="speed" value="2"><span>2×</span></label>
+          <label><input type="radio" name="speed" value="4"><span>4×</span></label>
+        </div>
+      </fieldset>
+
+      <div class="actions">
+        <button class="button button-primary" id="startButton" type="button">Start simulation</button>
+        <button class="button" id="pauseButton" type="button" disabled data-i18n="action.pause">Pause</button>
+        <button class="button button-quiet" id="resetButton" type="button" data-i18n="action.reset">Reset</button>
+      </div>
+
+      <div class="mode-card">
+        <span data-i18n="mode.current">Current Mode</span>
+        <strong id="currentMode">FIXED TIMING</strong>
+        <p id="modeDescription">30-second green phases regardless of demand.</p>
+      </div>
+    </aside>
+
+    <section class="simulation-column" aria-label="Intersection simulation" data-i18n-aria="aria.simulation">
+      <div class="canvas-header">
+        <div>
+          <span class="section-label" data-i18n="simulation.live">LIVE INTERSECTION</span>
+          <h2 data-i18n="simulation.junction">Junction 01</h2>
+        </div>
+        <div class="sim-time"><span data-i18n="simulation.time">SIM TIME</span><strong id="canvasTime">00:00</strong></div>
+      </div>
+      <div class="canvas-shell">
+        <canvas id="simulationCanvas" aria-label="Top-down intersection traffic simulation" data-i18n-aria="aria.canvas"></canvas>
+        <div class="canvas-overlay" aria-hidden="true">
+          <span class="direction north">N</span>
+          <span class="direction east">E</span>
+          <span class="direction south">S</span>
+          <span class="direction west">W</span>
+        </div>
+      </div>
+      <p class="canvas-note"><span></span><b data-i18n="simulation.note">Rule-based traffic simulation · vehicles travel straight only</b></p>
+    </section>
+
+    <aside class="panel data-panel" aria-label="Live statistics" data-i18n-aria="aria.statistics">
+      <div class="panel-heading">
+        <span class="panel-number">02</span>
+        <div><p data-i18n="metrics.label">TELEMETRY</p><h2 data-i18n="metrics.title">Live Metrics</h2></div>
+      </div>
+
+      <section class="signal-section" aria-label="Signal status" data-i18n-aria="aria.signals">
+        <div class="signal-row">
+          <div><span class="axis-tag">NS</span><div class="mini-signal" id="nsSignal" data-state="green"><i></i><i></i><i></i></div></div>
+          <strong id="nsState">GREEN</strong>
+        </div>
+        <div class="signal-row">
+          <div><span class="axis-tag">EW</span><div class="mini-signal" id="ewSignal" data-state="red"><i></i><i></i><i></i></div></div>
+          <strong id="ewState">RED</strong>
+        </div>
+        <div class="phase-countdown"><span data-i18n="signal.remaining">PHASE REMAINING</span><strong><b id="phaseRemaining">30</b> <i data-i18n="unit.seconds">s</i></strong></div>
+      </section>
+
+      <section class="metrics-grid" aria-label="Simulation statistics" data-i18n-aria="aria.metrics">
+        <div class="metric wide"><span data-i18n="metrics.elapsed">Elapsed Time</span><strong id="elapsedTime">00:00</strong></div>
+        <div class="metric"><span data-i18n="metrics.generated">Generated</span><strong id="vehiclesGenerated">0</strong></div>
+        <div class="metric"><span data-i18n="metrics.passed">Passed</span><strong id="vehiclesPassed">0</strong></div>
+        <div class="metric"><span data-i18n="metrics.waiting">Waiting</span><strong id="currentlyWaiting">0</strong></div>
+        <div class="metric"><span data-i18n="metrics.average">Avg. Wait</span><strong><b id="averageWaitingTime">0.0</b> <i data-i18n="unit.seconds">s</i></strong></div>
+        <div class="metric"><span data-i18n="metrics.maximum">Max. Wait</span><strong><b id="maximumWaitingTime">0.0</b> <i data-i18n="unit.seconds">s</i></strong></div>
+        <div class="metric"><span data-i18n="metrics.idle">Total Idle</span><strong><b id="totalIdleTime">0.0</b> <i data-i18n="unit.seconds">s</i></strong></div>
+      </section>
+
+      <section class="queue-section" aria-label="Directional queues" data-i18n-aria="aria.queues">
+        <div class="queue-heading"><span data-i18n="queue.load">QUEUE LOAD</span><span data-i18n="queue.vehicles">VEHICLES</span></div>
+        <div class="queue-row"><span data-i18n="queue.ns">North / South</span><div><i id="nsQueueBar"></i></div><strong id="nsQueue">0</strong></div>
+        <div class="queue-row"><span data-i18n="queue.ew">East / West</span><div><i id="ewQueueBar"></i></div><strong id="ewQueue">0</strong></div>
+      </section>
+    </aside>
+  </main>
+
+  <footer>
+    <span data-i18n="footer.project">GREEN LIGHT PROJECT · CONCEPT SIMULATOR</span>
+    <span data-i18n="footer.version">V1.0.0 / SINGLE INTERSECTION</span>
+  </footer>
+
+  <script type="module" src="./js/main.js"></script>
+</body>
+</html>
